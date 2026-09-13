@@ -5,8 +5,10 @@
   "sources": [
     "https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/agent-roles/src/discovery.rs",
     "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+    "https://learn.chatgpt.com/docs/agent-configuration/subagents",
     "https://learn.chatgpt.com/docs/config-file/config-reference",
-    "https://learn.chatgpt.com/docs/custom-prompts"
+    "https://learn.chatgpt.com/docs/custom-prompts",
+    "https://learn.chatgpt.com/docs/hooks"
   ],
   "setup_stable_id": "setup_01M15EN748TQX8H824ERR55JXC",
   "setup_version": "1.5",

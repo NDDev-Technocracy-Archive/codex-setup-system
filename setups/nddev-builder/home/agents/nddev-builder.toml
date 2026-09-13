@@ -42,7 +42,7 @@ what it owns, ask the binary: `codex-setup-system provider-info`.
 
 **Where it goes**: `~/.codex/agents/<name>.toml`
 
-**Decided by**: https://github.com/openai/codex/blob/rust-v0.151.0/codex-rs/agent-roles/src/discovery.rs; routing measured by running the 0.151.0 binary against a temporary CODEX_HOME
+**Decided by**: https://learn.chatgpt.com/docs/agent-configuration/subagents; routing originally measured by running the 0.151.0 binary against a temporary CODEX_HOME
 
 **How it runs**: Codex spawns the role by its `name`.
 
@@ -54,12 +54,18 @@ what it owns, ask the binary: `codex-setup-system provider-info`.
 | `description` | **yes** | Role guidance shown when choosing and spawning that agent type. |
 | `developer_instructions` | **yes** | The role's prompt. Refused when absent, and it is the one a reader leaves out. |
 | `nickname_candidates` | no | Names an agent spawned with this role may be given. |
+| `model` | no | Model override for sessions spawned with this role. |
+| `model_reasoning_effort` | no | Reasoning effort for the selected model. |
+| `sandbox_mode` | no | Narrow the spawned session's sandbox policy. |
+| `mcp_servers` | no | Role-specific MCP server configuration. |
+| `skills.config` | no | Skills made available to the spawned session. |
 
 ## What bites
 
 - **All three fields above are refused when missing, and the third is the one you will forget.** Measured against the 0.151.0 binary with a temporary `CODEX_HOME`, read back through `codex doctor`: a file with `name` and `description` alone is refused with *"must define `developer_instructions`"*; without `name`, *"must define a non-empty `name`"*; without `description`, *"must define a description"*. A complete one is accepted in silence, and so is one a directory deeper.
 - **This page said the opposite until 2026-08-30, and how it was wrong is the part worth keeping.** It said a file in `agents/` is not an agent and a role is irreducibly a `[agents.<name>]` stanza plus the layer it points at. The measurement behind that planted an `agents/<name>.md` and observed that nothing loaded it -- and the product's discovery filters on `extension == "toml"`, so that control could not have failed whatever the truth was. A negative drawn from an experiment incapable of producing a positive.
 - **The stanza form still works.** A `[agents.<name>]` table with `config_file` names a role and excludes that file from the directory scan, so the two forms do not collide. This toolkit shipped as that pair until 2026-08-30 and ships as one standalone file now -- read `agents/nddev-builder.toml` as the worked example of the kind this provider declares.
+- **Personal and project agents are separate scopes.** Put personal roles under `~/.codex/agents/` and repository roles under `.codex/agents/`. A standalone agent file is a configuration layer: settings it omits, including sandbox, MCP and skills configuration, inherit from the parent session.
 
 ## Before you ship one
 
@@ -139,12 +145,13 @@ Generated from the same rows as the section above, for every harness in this est
 
 ## Events
 
-`SessionStart`  `SessionEnd`  `SubagentStart`  `SubagentStop`  `PreToolUse`  `PostToolUse`  `PermissionRequest`  `PreCompact`  `PostCompact`  `UserPromptSubmit`  `Stop`
+`SessionStart`  `SessionEnd`  `SubagentStart`  `SubagentStop`  `PreToolUse`  `PostToolUse`  `PermissionRequest`  `PreCompact`  `PostCompact`  `UserPromptSubmit`  `Stop`  `Interrupt`
 
 ## What bites
 
 - **Hooks are trusted by hash, and this changes what an install means.** The vendor is explicit: *"Before a non-managed hook can run, Codex requires you to review and trust the exact hook definition. Codex records trust against the hook's current hash, so new or changed hooks are marked for review and skipped until trusted."* So writing this file -- by an install, or by a restore putting back a file that was trusted before -- leaves the hooks inert until a person runs `/hooks` and trusts them again. A setup that carries hooks cannot promise they are active, only that the file is in place. Say so where a reader will see it.
 - This surface is a single JSON **file**, not a directory of them. The other harness in this estate that routes hooks does the opposite; a hook moved between the two has to be repackaged.
+- **A hook is useful policy, not a complete enforcement boundary.** Some specialised tool paths bypass tool hooks, and matching hooks for one event start concurrently. Keep hard security boundaries in the sandbox and permission layer. An async hook cannot block, approve or rewrite the operation that started it.
 
 ## The same file on the other harnesses
 
