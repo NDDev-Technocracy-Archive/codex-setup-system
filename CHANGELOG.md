@@ -15,6 +15,17 @@ cut and that this clone does not carry.
 
 ## [Unreleased]
 
+The project profile now includes the documented .agents/skills surface alongside
+repository instructions and hooks. All three declared kinds have actual prepared
+application, source-loss replay, recovery, replacement and removal coverage.
+Shared resources, overrides, credentials, policy and runtime canaries are
+preserved. Unsupported paths refuse before control state is created.
+
+Standalone crates.io packaging retains all component modules and handles nested
+crate paths at single-colon boundaries. CI checks the projected package, compiles
+its tests and reads its executable declaration through Cargo's configured target
+directory. Published releases and existing global/user_root fields are unchanged.
+
 ## [0.0.94] - 2026-10-13
 
 Forward configuration plans now support explicit preparation before any

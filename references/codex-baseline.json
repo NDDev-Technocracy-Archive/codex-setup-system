@@ -184,6 +184,15 @@
             "source": "https://developers.openai.com/codex/hooks; path and project scope carried by the Codex 0.153.0 hook configuration implementation",
             "evidence": "page",
             "note": "The project hook manifest retains its .codex parent under the repository root. Trust and handler approval remain product concerns; this provider owns exact bytes and restores them, but does not claim that installing a file grants execution trust."
+          },
+          {
+            "path": ".agents/skills",
+            "kinds": [
+              "skill"
+            ],
+            "shape": "directory",
+            "source": "https://learn.chatgpt.com/docs/build-skills",
+            "evidence": "page"
           }
         ],
         "declined": [
@@ -209,14 +218,10 @@
             "reason": "Project-scoped agent role definitions. The builder's own reference cites this directory; ownership of project-scoped roles belongs to the repository that defines the project.",
             "source": "codex subagents documentation; setups/codex/nddev-builder reference cites the same path",
             "note": "Recorded 2026-09-27."
-          },
-          {
-            "path": ".agents/skills",
-            "reason": "Repository-level skills directory the product reads beside the user-level `~/.agents/skills`. Project content, not a provider-owned install surface.",
-            "source": "codex core-skills loader; https://learn.chatgpt.com/docs/build-skills",
-            "note": "Recorded 2026-09-27."
           }
-        ]
+        ],
+        "measured_at": "2026-10-26",
+        "loading_note": "Vendor trust, precedence, runtime state and managed policy remain independent of installation. Filesystem tests do not prove actual loading. Unowned shared resources must remain intact."
       }
     ],
     "configuration_format": {
