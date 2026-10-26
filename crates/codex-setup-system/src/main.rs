@@ -17,6 +17,9 @@ use std::process::ExitCode;
 
 mod software;
 
+#[cfg(test)]
+mod project_tests;
+
 use harness_runtime::{Harness, LaunchBinding, PreservationSurface, Scoped, Shadow};
 use provider_v3::{ComponentKind, ProjectionKind, TargetScope};
 
@@ -301,11 +304,15 @@ pub const CODEX: Harness = Harness {
         Scoped {
             target_scope: TargetScope::Project,
             profile_id: "codex/native-files/project/1",
-            component_kinds: &[ComponentKind::Instruction, ComponentKind::Hook],
+            component_kinds: &[
+                ComponentKind::Instruction,
+                ComponentKind::Hook,
+                ComponentKind::Skill,
+            ],
             projection_kinds: &[ProjectionKind::NativeFiles],
-            // Repository instructions live at the root. Hooks retain the
-            // product-owned `.codex` parent relative to that same root.
-            native_namespaces: &["AGENTS.md", ".codex/hooks.json"],
+            // Instructions live at the root; hooks and skills retain their
+            // documented parents. Only recorded skill files belong to us.
+            native_namespaces: &["AGENTS.md", ".codex/hooks.json", ".agents/skills"],
         },
     ],
     max_files: 8192,

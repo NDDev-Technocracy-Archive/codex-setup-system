@@ -8,10 +8,14 @@ orchestration; this component owns the final harness files and recovery.
 This repository remains the public source and release boundary, with the
 existing package identity. It is part of ai-stp, not a separate user workflow.
 
-The isolated [Rust CLI preview](https://github.com/ai-engineers-guild/ai-stp/tree/dev/apps/cli-v2)
-reports its implemented capabilities through its executable registry. Native
-writable lifecycle and production cutover are separate acceptance steps;
-this component's commands below do not claim that the preview already installs.
+The native [ai-stp CLI](https://github.com/ai-engineers-guild/ai-stp/tree/main/apps/cli)
+reports implemented capabilities through its executable registry. A setup needs
+both an authenticated component profile and a qualified consumer route.
+
+The project profile targets the explicit checkout. It manages repository
+instructions, the project hook manifest and exact files under .agents/skills,
+preserving neighbouring/shared resources and user runtime state. Vendor trust,
+managed requirements and source precedence remain independent of installation.
 
 Installs, reselects, restores and removes a complete Codex harness configuration in a caller-named target directory.
 
@@ -183,9 +187,9 @@ download say the same thing.
 
 The ai-stp CLI selects an exact component release, authenticates its artifacts
 and invokes it through the provider protocol. Normal user workflows do not
-require installing this component as a second CLI. The native preview's
-implemented commands are described in its linked contract above; its writable
-lifecycle remains a separate acceptance step.
+require installing this component as a second CLI. The native executable registry
+describes implemented commands. Scope-specific installation requires both a
+qualified component profile and a qualified consumer route.
 
 For maintenance, a locally built executable can be checked explicitly through
 the released CLI's expert conformance command:
