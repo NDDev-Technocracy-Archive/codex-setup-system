@@ -36,8 +36,8 @@ jobs:
     with:
       hosted-runner: ubuntu-24.04
       recipe: test-msrv
-      arguments: '["1.89"]'
-      rust-version: '1.89'
+      arguments: '["1.89.0"]'
+      rust-version: '1.89.0'
       python-version: '3.15.2'
       timeout-minutes: 30
 
