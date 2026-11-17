@@ -218,6 +218,14 @@ and the attestation on the binary are true of the same bytes.
 
 ## Building
 
+`just check` runs build-free Rust/workflow source checks. `just test`
+preserves the native Clippy/build/package/self-test commands below;
+`just verify` also runs the retained supply-chain, full lockfile and
+complete-history gates. CI calls these project commands through the shared
+revision declared in `.github/workflows/ci.yml`. Import-table, platform,
+MSRV, release and lifecycle evidence remain independent obligations.
+Source commands perform no provider installation or runtime operation.
+
 ```bash
 cargo build --locked --all-targets
 cargo test --locked --all-targets
