@@ -1,31 +1,42 @@
 name: security
-
 on:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, edited]
   push:
     branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: security-${{ github.event.pull_request.number || github.ref }}
-  # Obsolete pull-request heads are cancelled; a running main validation always completes.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   codeql:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
-      security-events: write
+      actions: read # read workflow metadata for code scanning
+      security-events: write # publish this analysis to code scanning
     strategy:
       fail-fast: false
       matrix:
         language: [rust, actions]
     steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Isolate global Git configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          isolated_config="$RUNNER_TEMP/public-codeql.gitconfig"
+          : > "$isolated_config"
+          printf 'GIT_CONFIG_GLOBAL=%s\n' "$isolated_config" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -44,37 +55,106 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      security-events: write
-      id-token: write
+      actions: read # Scorecard inspects workflow definitions
+      security-events: write # publish this analysis to code scanning
+      id-token: write # sign the Scorecard publication with OIDC
+    env:
+      SCORECARD_PUBLISH_RESULTS: "true"
+      SCORECARD_SARIF_CATEGORY: ossf-scorecard
+      SCORECARD_EVENT_NAME: ${{ github.event_name }}
+      SCORECARD_REF: ${{ github.ref }}
+      SCORECARD_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      SCORECARD_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+      SCORECARD_REPOSITORY_FORK: ${{ github.event.repository.fork }}
+      SCORECARD_SERVER_URL: ${{ github.server_url }}
     steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Validate the retained publication boundary
+        run: python3 tools/check_scorecard_contract.py
       - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: ${{ env.SCORECARD_PUBLISH_RESULTS }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-results
+          path: results.sarif
+          if-no-files-found: error
+          retention-days: 5
       - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: results.sarif
-          category: scorecard
+          category: ${{ env.SCORECARD_SARIF_CATEGORY }}
 
   dependency-review:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # publish the original on-failure dependency summary
     steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+          vulnerability-check: true
+
 
   osv:
     uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
-    permissions:
-      contents: read
     with:
       hosted-runner: ubuntu-24.04
       recipe: audit-lockfiles
+      tool-assets: .github/osv-tools.json
+      timeout-minutes: 15
+
+  secret-scan:
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
+    with:
+      hosted-runner: ubuntu-24.04
+      recipe: audit-secrets
       fetch-depth: 0
-      timeout-minutes: 10
+      tool-assets: .github/secrets-tools.json
+      timeout-minutes: 15
+
+  zizmor:
+    name: zizmor (SARIF)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read # SARIF upload reads this workflow run
+      contents: read
+      security-events: write # publish the retained SARIF analysis
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Prepare the exact caller-owned validator
+        uses: NDDev-Technocracy-OpenNetwork/nddev-ci/actions/prepare@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
+        with:
+          managed: false
+          tool-assets: .github/zizmor-tools.json
+      - name: Run the retained online SARIF scan
+        id: scan
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just audit-workflows-sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+      - name: Enforce the original scanner outcome
+        if: steps.scan.outcome == 'failure'
+        run: exit 1

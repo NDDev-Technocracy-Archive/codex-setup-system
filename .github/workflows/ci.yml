@@ -2,6 +2,7 @@ name: ci
 
 on:
   pull_request:
+    branches: [main]
     types: [opened, synchronize, reopened, labeled, edited]
   push:
     branches: [main]
@@ -12,31 +13,93 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Obsolete pull-request heads are cancelled; a running main validation always completes.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rust:
+    name: rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-24.04", "macos-26", "windows-2025"]
     uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
-    permissions:
-      contents: read
+    with:
+      hosted-runner: ${{ matrix.os }}
+      recipe: test
+      rust-version: '1.98.1'
+      rust-components: rustfmt,clippy
+      python-version: '3.15.2'
+      timeout-minutes: 40
+
+  msrv:
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
     with:
       hosted-runner: ubuntu-24.04
-      recipe: test
-      rust-version: 1.98.1
-      rust-components: rustfmt,clippy
+      recipe: test-msrv
+      arguments: '["1.89"]'
+      rust-version: '1.89'
+      python-version: '3.15.2'
       timeout-minutes: 30
 
   supply-chain:
     uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
-    permissions:
-      contents: read
     with:
       hosted-runner: ubuntu-24.04
       recipe: audit-dependencies
-      rust-version: 1.98.1
+      rust-version: '1.98.1'
       tools: cargo-deny@0.20.2,cargo-audit@0.23.0,cargo-machete@0.9.2
-      timeout-minutes: 15
+      timeout-minutes: 20
+
+  source:
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
+    with:
+      hosted-runner: ubuntu-24.04
+      recipe: check
+      rust-version: '1.98.1'
+      rust-components: rustfmt
+      tool-assets: .github/source-tools.json
+      timeout-minutes: 10
+
+  merge-stops:
+    if: github.event_name == 'pull_request'
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/merge-stops.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
+
+  gate:
+    needs: [rust, msrv, supply-chain, source, boundary, commitlint, pr-title]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every retained native and source obligation
+        env:
+          PASSED: ${{ needs.rust.result == 'success' && needs.msrv.result == 'success' && needs.supply-chain.result == 'success' && needs.source.result == 'success' && needs.boundary.result == 'success' && needs.commitlint.result == (github.event_name == 'pull_request' && 'success' || 'skipped') && needs.pr-title.result == (github.event_name == 'pull_request' && 'success' || 'skipped') }}
+        run: test "$PASSED" = true
+
+  commitlint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
+
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # the action reads the title being validated
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
 
   boundary:
     name: boundary (${{ matrix.os }})
@@ -51,8 +114,7 @@ jobs:
         # `dumpbin` from a Visual Studio environment that is not on `PATH` by
         # default. A step that sometimes finds its tool is worse than a gap
         # nobody was told about, so the gap is written down here instead.
-        # macOS joins on main; pull requests keep the Linux path.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-26"]') }}
+        os: [ubuntu-24.04, macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     defaults:
@@ -64,11 +126,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # No build cache here: this job reads the import table of bytes built by this commit.
-      - name: Select the pinned Rust toolchain
-        run: |
-          rustup toolchain install 1.98.1 --profile minimal
-          echo RUSTUP_TOOLCHAIN=1.98.1 >> "$GITHUB_ENV"
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0
+        with:
+          toolchain: '1.98.1'
+          # The same reason the release job gives. This job's whole subject is
+          # the bytes that come out of the build, so restoring someone else's
+          # `target/` and then reading its import table would answer a question
+          # about a cache rather than about this commit.
+          cache: false
 
       - run: python tools/with_libclang.py cargo build --locked --release
 
@@ -170,71 +236,3 @@ jobs:
             exit 1
           fi
           echo "the import table agrees with the declaration"
-
-  platforms:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
-    if: ${{ github.event_name != 'pull_request' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-26, windows-2025]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Select the pinned Rust toolchain
-        run: |
-          rustup toolchain install 1.98.1 --profile minimal
-          echo RUSTUP_TOOLCHAIN=1.98.1 >> "$GITHUB_ENV"
-      - name: Tests on the other supported platforms
-        run: python tools/with_libclang.py cargo test --locked --all-targets
-
-  msrv:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    if: ${{ github.event_name != 'pull_request' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Select the pinned Rust toolchain
-        run: |
-          rustup toolchain install 1.89 --profile minimal
-          echo RUSTUP_TOOLCHAIN=1.89 >> "$GITHUB_ENV"
-      - name: Minimum supported Rust version
-        run: python tools/with_libclang.py cargo check --locked --all-targets
-
-  workflows:
-    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
-    permissions:
-      contents: read
-    with:
-      hosted-runner: ubuntu-24.04
-      recipe: audit-source
-      arguments: ${{ format('["{0}"]', github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '--all') }}
-      rust-version: 1.98.1
-      rust-components: rustfmt
-      fetch-depth: 0
-      timeout-minutes: 10
-
-  merge-stops:
-    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/merge-stops.yml@a12acfc75fd7daee2fac9a246ee60683fe18955b # v0.6.67
-    permissions:
-      contents: read
-    with:
-      hosted-runner: ubuntu-24.04
-
-  gate:
-    needs: [rust, supply-chain, boundary, platforms, msrv, workflows]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Require every retained native and source result
-        env:
-          PASSED: ${{ needs.rust.result == 'success' && needs.supply-chain.result == 'success' && needs.boundary.result == 'success' && needs.workflows.result == 'success' && needs.platforms.result == (github.event_name == 'pull_request' && 'skipped' || 'success') && needs.msrv.result == (github.event_name == 'pull_request' && 'skipped' || 'success') }}
-        run: test "$PASSED" = true
